@@ -1,0 +1,26 @@
+#!/bin/bash
+REGION="eu-west-1"
+
+for eni in $(aws ec2 describe-network-interfaces --filters "Name=vpc-id,Values=$VPC_ID" --region $REGION --query "NetworkInterfaces[].NetworkInterfaceId" --output text); do
+done
+
+for nat in $(aws ec2 describe-nat-gateways --filter "Name=vpc-id,Values=$VPC_ID" --region $REGION --query "NatGateways[].NatGatewayId" --output text); do
+done
+sleep 30
+
+for igw in $(aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$VPC_ID" --region $REGION --query "InternetGateways[].InternetGatewayId" --output text); do
+done
+
+for subnet in $(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --region $REGION --query "Subnets[].SubnetId" --output text); do
+done
+
+for rt in $(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" --region $REGION --query "RouteTables[?Associations[0].Main!=\`true\`].RouteTableId" --output text); do
+  aws ec2 delete-route-table --route-table-id $rt --region $REGION
+done
+
+for sg in $(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$VPC_ID" --region $REGION --query "SecurityGroups[?GroupName!='default'].GroupId" --output text); do
+done
+
+aws ec2 delete-vpc --vpc-id $VPC_ID --region $REGION
+
+echo "VPC $VPC_ID cleanup attempted."
