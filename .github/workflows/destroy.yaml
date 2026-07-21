@@ -26,6 +26,10 @@ jobs:
         working-directory: ./terraform
 
     steps:
+      # Checkout Repository (must run first so ./terraform exists for later steps)
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
       # Guard: require explicit confirmation input
       - name: Confirm Destroy
         run: |
@@ -33,10 +37,6 @@ jobs:
             echo "You must type 'destroy' in the confirm input to proceed."
             exit 1
           fi
-
-      # Checkout Repository
-      - name: Checkout Source Code
-        uses: actions/checkout@v4
 
       # Configure AWS Credentials
       - name: Configure AWS Credentials
