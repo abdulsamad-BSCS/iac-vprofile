@@ -1,0 +1,86 @@
+name: Terraform Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "destroy" to confirm you want to tear down infrastructure'
+        required: true
+        type: string
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  BUCKET_TF_STATE: abdulsamadkamuna1
+  AWS_REGION: eu-west-1
+  EKS_CLUSTER: vprofile-eks
+
+jobs:
+  terraform-destroy:
+    name: Destroy Terraform Infra
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./terraform
+
+    steps:
+      # Guard: require explicit confirmation input
+      - name: Confirm Destroy
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "destroy" ]; then
+            echo "You must type 'destroy' in the confirm input to proceed."
+            exit 1
+          fi
+
+      # Checkout Repository
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      # Configure AWS Credentials
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Install Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.3"
+
+      # Terraform Init
+      - name: Terraform Init
+        id: init
+        run: terraform init -backend-config="bucket=${{ env.BUCKET_TF_STATE }}"
+
+      # Optional: clean up Kubernetes-managed resources (ingress controller, LBs)
+      # before destroying the EKS cluster itself — otherwise Terraform can get
+      # stuck trying to delete a VPC/subnets that still have an orphaned ELB
+      # attached to them from the ingress-nginx Service.
+      - name: Update kubeconfig
+        id: getconfig
+        continue-on-error: true
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.EKS_CLUSTER }}
+
+      - name: Delete Ingress Controller (cleanup LoadBalancer)
+        if: steps.getconfig.outcome == 'success'
+        continue-on-error: true
+        run: |
+          kubectl delete -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml --ignore-not-found
+
+      # Terraform Plan (destroy)
+      - name: Terraform Plan Destroy
+        id: plan
+        run: terraform plan -destroy -out=tfplan -input=false
+
+      # Terraform Destroy
+      - name: Terraform Destroy
+        id: destroy
+        run: terraform apply -auto-approve -input=false tfplan
